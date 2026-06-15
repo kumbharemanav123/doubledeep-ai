@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DoubleDeep AI runs image-origin analysis privately in your browser.">
+  <title>DoubleDeep AI | Browser Image Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+  <div class="page-glow page-glow-one"></div>
+  <div class="page-glow page-glow-two"></div>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="DoubleDeep AI home">
+      <span class="brand-mark"><i></i><i></i></span>
+      <span>DoubleDeep <b>AI</b></span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#scanner">Scanner</a>
+      <a href="#method">Method</a>
+      <a href="#model-card">Model card</a>
+    </nav>
+    <a class="header-cta" href="#scanner">Run analysis</a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="eyebrow"><span></span> Private, in-browser image intelligence</div>
+      <h1>Look beyond the image.<br><em>Inspect its origin.</em></h1>
+      <p class="hero-copy">DoubleDeep uses a trained Community Forensics vision model to estimate whether an image is synthetic or camera-captured. Inference runs on your device and the image is never uploaded.</p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="#scanner">Analyze an image <span aria-hidden="true">&#8599;</span></a>
+        <a class="button button-quiet" href="#method">See how it works</a>
+      </div>
+      <div class="trust-row" aria-label="Product capabilities">
+        <span>JPEG</span><span>PNG</span><span>WEBP</span><span>On-device inference</span><span>Downloadable report</span>
+      </div>
+    </section>
+
+    <section class="scanner-section" id="scanner">
+      <div class="section-heading">
+        <div><span class="section-index">01</span><h2>Image-origin scanner</h2></div>
+        <p>Select one image. The first analysis downloads an 83 MB model; subsequent scans use the browser cache.</p>
+      </div>
+
+      <div class="scanner-shell">
+        <div class="upload-column">
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload an image">
+            <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <div id="empty-state" class="empty-state">
+              <div class="upload-icon"><span>+</span></div>
+              <h3>Drop an image here</h3>
+              <p>click to browse, drop, or paste</p>
+              <small>JPEG, PNG or WEBP &middot; maximum 15 MB</small>
+            </div>
+            <div id="preview-state" class="preview-state" hidden>
+              <img id="preview-image" alt="Selected image preview">
+              <button id="remove-image" class="remove-button" type="button" aria-label="Remove selected image">&times;</button>
+              <div class="preview-meta"><strong id="preview-name"></strong><span id="preview-size"></span></div>
+            </div>
+          </div>
+          <button id="analyze-button" class="analyze-button" type="button" disabled>
+            <span>Analyze provenance</span><b aria-hidden="true">&#8599;</b>
+          </button>
+          <div id="status-message" class="status-message" role="status"></div>
+        </div>
+
+        <aside class="result-column" id="result-panel" aria-live="polite">
+          <div id="result-placeholder" class="result-placeholder">
+            <div class="radar"><i></i><i></i><i></i><span></span></div>
+            <h3>Analysis will appear here</h3>
+            <p>The model reviews learned generator traces and reports uncertainty instead of forcing a binary claim.</p>
+          </div>
+          <div id="result-content" hidden>
+            <div class="result-topline"><span id="engine-badge">Browser model</span><span id="scan-id"></span></div>
+            <div class="verdict-row">
+              <div><p>Assessment</p><h3 id="verdict-label">Inconclusive</h3></div>
+              <div class="score-ring" id="score-ring"><strong id="score-value">50%</strong><span>AI likelihood</span></div>
+            </div>
+            <div class="confidence-line"><span>Evidence confidence</span><b id="confidence-value">--</b></div>
+            <div class="confidence-track"><i id="confidence-bar"></i></div>
+            <div class="evidence-list" id="evidence-list"></div>
+            <details class="signal-details">
+              <summary>View signal profile</summary>
+              <div id="signal-list"></div>
+            </details>
+            <button id="download-report" class="report-button" type="button">Download JSON report</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="method-section" id="method">
+      <div class="section-heading">
+        <div><span class="section-index">02</span><h2>How the public demo works</h2></div>
+        <p>A compact deployment designed for open access, transparent limitations and private processing.</p>
+      </div>
+      <div class="method-grid">
+        <article><span>01</span><div class="method-icon pixel-icon"></div><h3>Trained visual model</h3><p>A Vision Transformer evaluates visual patterns learned from camera and generated-image datasets.</p></article>
+        <article><span>02</span><div class="method-icon wave-icon"></div><h3>Local preprocessing</h3><p>Your browser crops, resizes and normalizes the image before inference. No upload API is involved.</p></article>
+        <article><span>03</span><div class="method-icon file-icon"></div><h3>Explicit uncertainty</h3><p>Mid-range scores are reported as inconclusive. A detector estimate is evidence, not proof of authorship.</p></article>
+        <article><span>04</span><div class="method-icon gauge-icon"></div><h3>Portable report</h3><p>Download the score, verdict and model metadata as JSON for review or benchmark documentation.</p></article>
+      </div>
+    </section>
+
+    <section class="model-card" id="model-card">
+      <div class="model-copy">
+        <span class="section-index">03</span>
+        <h2>Useful evidence,<br>without theatrical certainty.</h2>
+        <p>This public demo uses the MIT-licensed Community Forensics model by Owens Lab. Performance can shift with new generators, editing, screenshots and compression, so results should not be the sole basis for high-impact decisions.</p>
+        <a href="https://huggingface.co/OwensLab/commfor-model-384" target="_blank" rel="noreferrer">Review the source model &#8599;</a>
+      </div>
+      <div class="model-stats">
+        <div><span>Runtime</span><strong>Browser</strong><p>ONNX Runtime Web with local WebAssembly inference</p></div>
+        <div><span>Input</span><strong>384 x 384</strong><p>Center-cropped RGB image normalized on device</p></div>
+        <div><span>Privacy</span><strong>Local</strong><p>The selected image never leaves the browser</p></div>
+        <div><span>Decision use</span><strong>Assistive</strong><p>Review alongside provenance and human judgment</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="brand"><span class="brand-mark"><i></i><i></i></span><span>DoubleDeep <b>AI</b></span></div>
+    <p>Browser-native image intelligence by Manav Kumbhare.</p>
+    <span>Probabilistic analysis &middot; public research demo</span>
+  </footer>
+
+  <script src="vendor/ort/ort.min.js"></script>
+  <script src="app.js?v=1" defer></script>
+</body>
+</html>
