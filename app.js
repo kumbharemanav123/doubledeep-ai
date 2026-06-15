@@ -1,9 +1,9 @@
 const $ = (selector) => document.querySelector(selector);
-const MODEL_URL = "model.onnx";
+const MODEL_MANIFEST_URL = "model-manifest.json";
 const ORT_ASSET_ROOT = new URL("vendor/ort/", window.location.href).href;
-const IMAGE_SIZE = 384;
-const IMAGE_MEAN = [0.485, 0.456, 0.406];
-const IMAGE_STD = [0.229, 0.224, 0.225];
+const IMAGE_SIZE = 224;
+const IMAGE_MEAN = [0.5, 0.5, 0.5];
+const IMAGE_STD = [0.5, 0.5, 0.5];
 
 const dropzone = $("#dropzone");
 const fileInput = $("#file-input");
@@ -64,45 +64,86 @@ function selectFile(file) {
 
 async function loadSession() {
   if (!sessionPromise) {
-    statusMessage.textContent = "Loading the 83 MB vision model. The first run can take a minute...";
-    sessionPromise = ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all",
-    }).catch((error) => {
-      sessionPromise = null;
-      throw error;
-    });
+    sessionPromise = fetch(MODEL_MANIFEST_URL)
+      .then((response) => {
+        if (!response.ok) throw new Error("Model manifest could not be loaded.");
+        return response.json();
+      })
+      .then((manifest) => {
+        const totalSize = formatBytes(manifest.total_size);
+        statusMessage.textContent = `Loading the ${totalSize} primary vision model. The first run can take a few minutes...`;
+        return ort.InferenceSession.create(new URL(manifest.model, window.location.href).href, {
+          executionProviders: ["wasm"],
+          graphOptimizationLevel: "all",
+          externalData: manifest.external_data.map((file) => ({
+            path: file.path,
+            data: new URL(file.path, window.location.href).href,
+          })),
+        });
+      })
+      .catch((error) => {
+        sessionPromise = null;
+        throw error;
+      });
   }
   return sessionPromise;
 }
 
 async function decodeImage(file) {
-  const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height) * (384 / 440);
-  const sourceX = Math.floor((bitmap.width - side) / 2);
-  const sourceY = Math.floor((bitmap.height - side) / 2);
+  return createImageBitmap(file);
+}
+
+function buildViewRects(bitmap) {
+  const width = bitmap.width;
+  const height = bitmap.height;
+  const views = [{ x: 0, y: 0, width, height }];
+
+  if (height > width * 1.1) {
+    const side = width;
+    [0, Math.floor((height - side) / 2), height - side].forEach((y) => {
+      views.push({ x: 0, y, width: side, height: side });
+    });
+  } else if (width > height * 1.1) {
+    const side = height;
+    [0, Math.floor((width - side) / 2), width - side].forEach((x) => {
+      views.push({ x, y: 0, width: side, height: side });
+    });
+  } else {
+    const side = Math.max(32, Math.floor(Math.min(width, height) * 0.84));
+    views.push(
+      { x: 0, y: 0, width: side, height: side },
+      { x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side },
+      { x: width - side, y: height - side, width: side, height: side },
+    );
+  }
+  return views;
+}
+
+function renderView(bitmap, view) {
   const canvas = document.createElement("canvas");
   canvas.width = IMAGE_SIZE;
   canvas.height = IMAGE_SIZE;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  context.drawImage(bitmap, sourceX, sourceY, side, side, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
-  bitmap.close();
+  context.drawImage(bitmap, view.x, view.y, view.width, view.height, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
   return context.getImageData(0, 0, IMAGE_SIZE, IMAGE_SIZE);
 }
 
-function imageDataToTensor(imageData) {
-  const pixels = imageData.data;
+function imageViewsToTensor(imageViews) {
   const plane = IMAGE_SIZE * IMAGE_SIZE;
-  const values = new Float32Array(plane * 3);
-  for (let pixelIndex = 0; pixelIndex < plane; pixelIndex += 1) {
-    const sourceIndex = pixelIndex * 4;
-    values[pixelIndex] = ((pixels[sourceIndex] / 255) - IMAGE_MEAN[0]) / IMAGE_STD[0];
-    values[plane + pixelIndex] = ((pixels[sourceIndex + 1] / 255) - IMAGE_MEAN[1]) / IMAGE_STD[1];
-    values[(plane * 2) + pixelIndex] = ((pixels[sourceIndex + 2] / 255) - IMAGE_MEAN[2]) / IMAGE_STD[2];
-  }
-  return new ort.Tensor("float32", values, [1, 3, IMAGE_SIZE, IMAGE_SIZE]);
+  const values = new Float32Array(imageViews.length * plane * 3);
+  imageViews.forEach((imageData, viewIndex) => {
+    const pixels = imageData.data;
+    const viewOffset = viewIndex * plane * 3;
+    for (let pixelIndex = 0; pixelIndex < plane; pixelIndex += 1) {
+      const sourceIndex = pixelIndex * 4;
+      values[viewOffset + pixelIndex] = ((pixels[sourceIndex] / 255) - IMAGE_MEAN[0]) / IMAGE_STD[0];
+      values[viewOffset + plane + pixelIndex] = ((pixels[sourceIndex + 1] / 255) - IMAGE_MEAN[1]) / IMAGE_STD[1];
+      values[viewOffset + (plane * 2) + pixelIndex] = ((pixels[sourceIndex + 2] / 255) - IMAGE_MEAN[2]) / IMAGE_STD[2];
+    }
+  });
+  return new ort.Tensor("float32", values, [imageViews.length, 3, IMAGE_SIZE, IMAGE_SIZE]);
 }
 
 function textureComplexity(imageData) {
@@ -126,10 +167,43 @@ function sigmoid(value) {
   return 1 / (1 + Math.exp(-value));
 }
 
-function classify(probability) {
-  if (probability >= 0.68) return { verdict: "likely_ai", label: "Likely AI-generated" };
-  if (probability <= 0.32) return { verdict: "likely_real", label: "Likely camera-captured" };
+function classify(probability, confidence) {
+  if (confidence < 0.48 || (probability >= 0.43 && probability <= 0.57)) {
+    return { verdict: "inconclusive", label: "Inconclusive" };
+  }
+  if (probability > 0.57) return { verdict: "likely_ai", label: "Likely AI-generated" };
+  if (probability < 0.43) return { verdict: "likely_real", label: "Likely camera-captured" };
   return { verdict: "inconclusive", label: "Inconclusive" };
+}
+
+function aggregateProbabilities(probabilities) {
+  const sorted = [...probabilities].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+  const mean = probabilities.reduce((sum, value) => sum + value, 0) / probabilities.length;
+  const variance = probabilities.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / probabilities.length;
+  const disagreement = Math.sqrt(variance);
+  const aiSupport = probabilities.filter((value) => value >= 0.8).length / probabilities.length;
+  const realSupport = probabilities.filter((value) => value <= 0.2).length / probabilities.length;
+  const strongConflict = Math.max(...probabilities) >= 0.95 && Math.min(...probabilities) <= 0.05;
+
+  let probability = (0.56 * median) + (0.24 * mean) + (0.20 * probabilities[0]);
+  if (aiSupport > 0.5) {
+    probability = Math.max(probability, 0.64 + (0.28 * aiSupport));
+  } else if (strongConflict) {
+    probability = 0.5 + (0.08 * (aiSupport - realSupport));
+  } else if (realSupport > 0.5) {
+    probability = Math.min(probability, 0.36 - (0.24 * realSupport));
+  }
+  probability = Math.max(0.01, Math.min(0.99, probability));
+
+  const support = Math.max(aiSupport, realSupport);
+  let confidence = 0.52 + (0.30 * Math.abs(probability - 0.5) * 2) + (0.18 * support) - (0.34 * disagreement);
+  if (strongConflict && aiSupport <= 0.5) confidence = Math.min(confidence, 0.44);
+  confidence = Math.max(0.25, Math.min(0.96, confidence));
+  return { probability, confidence, disagreement, support, strongConflict };
 }
 
 function escapeHtml(value) {
@@ -143,7 +217,7 @@ function renderReport(report) {
   $("#result-panel").classList.add("has-result");
   $("#result-placeholder").hidden = true;
   $("#result-content").hidden = false;
-  $("#engine-badge").textContent = "Community Forensics / ONNX Web";
+  $("#engine-badge").textContent = "DoubleDeep SigLIP / ONNX Web";
   $("#scan-id").textContent = `Analysis ${report.scan_id.slice(0, 8)}`;
   $("#verdict-label").textContent = report.label;
   const score = Math.round(report.ai_probability * 100);
@@ -166,15 +240,18 @@ async function analyze() {
   analyzeButton.classList.add("loading");
   analyzeButton.querySelector("span").textContent = "Analyzing";
   try {
-    const [session, imageData] = await Promise.all([loadSession(), decodeImage(selectedFile)]);
-    statusMessage.textContent = "Running the vision transformer locally in your browser...";
-    const input = imageDataToTensor(imageData);
+    const [session, bitmap] = await Promise.all([loadSession(), decodeImage(selectedFile)]);
+    statusMessage.textContent = "Running whole-image and regional checks locally in your browser...";
+    const imageViews = buildViewRects(bitmap).map((view) => renderView(bitmap, view));
+    bitmap.close();
+    const input = imageViewsToTensor(imageViews);
     const outputMap = await session.run({ [session.inputNames[0]]: input });
-    const logit = Number(outputMap[session.outputNames[0]].data[0]);
-    const probability = sigmoid(logit);
-    const classification = classify(probability);
-    const confidence = Math.min(0.95, 0.44 + (Math.abs(probability - 0.5) * 1.02));
-    const texture = textureComplexity(imageData);
+    const probabilities = Array.from(outputMap[session.outputNames[0]].data, (logit) => sigmoid(Number(logit)));
+    const assessment = aggregateProbabilities(probabilities);
+    const probability = assessment.probability;
+    const confidence = assessment.confidence;
+    const classification = classify(probability, confidence);
+    const texture = textureComplexity(imageViews[0]);
     const report = {
       scan_id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
@@ -183,20 +260,20 @@ async function analyze() {
       label: classification.label,
       ai_probability: probability,
       confidence,
-      model: "OwensLab/commfor-model-384",
+      model: "Ateeqq/ai-vs-human-image-detector",
       runtime: "ONNX Runtime Web 1.22.0 / WebAssembly",
       evidence: [
         {
           direction: probability >= 0.5 ? "ai" : "real",
           title: probability >= 0.5 ? "Synthetic-pattern support" : "Camera-pattern support",
-          detail: `The learned model assigned ${Math.round(probability * 100)}% probability to the synthetic-image class.`,
+          detail: `The primary detector assigned ${Math.round(probability * 100)}% aggregated probability to the synthetic-image class.`,
         },
         {
-          direction: classification.verdict === "inconclusive" ? "neutral" : "real",
-          title: classification.verdict === "inconclusive" ? "Decision boundary is close" : "Decision margin is meaningful",
-          detail: classification.verdict === "inconclusive"
-            ? "The score is too close to the model boundary for a strong attribution."
-            : "The score is outside the conservative inconclusive range, but remains probabilistic evidence.",
+          direction: assessment.strongConflict ? "neutral" : (probability >= 0.5 ? "ai" : "real"),
+          title: assessment.strongConflict ? "Regional views disagree" : "Multi-view assessment",
+          detail: assessment.strongConflict
+            ? "Whole-image and crop-level predictions conflict, so confidence is reduced."
+            : `${Math.round(assessment.support * 100)}% of whole-image and regional views provide strong support in the same direction.`,
         },
         {
           direction: "neutral",
@@ -208,6 +285,7 @@ async function analyze() {
         { label: "AI likelihood", value: probability },
         { label: "Camera likelihood", value: 1 - probability },
         { label: "Decision confidence", value: confidence },
+        { label: "Model view agreement", value: assessment.support },
         { label: "Local texture complexity", value: texture },
       ],
       limitations: "Detector estimates can be affected by unseen generators, editing, screenshots, resizing and compression.",

@@ -30,7 +30,7 @@
     <section class="hero">
       <div class="eyebrow"><span></span> Private, in-browser image intelligence</div>
       <h1>Look beyond the image.<br><em>Inspect its origin.</em></h1>
-      <p class="hero-copy">DoubleDeep uses a trained Community Forensics vision model to estimate whether an image is synthetic or camera-captured. Inference runs on your device and the image is never uploaded.</p>
+      <p class="hero-copy">DoubleDeep uses its primary SigLIP vision detector with whole-image and regional analysis to estimate whether an image is synthetic or camera-captured. Inference runs on your device and the image is never uploaded.</p>
       <div class="hero-actions">
         <a class="button button-primary" href="#scanner">Analyze an image <span aria-hidden="true">&#8599;</span></a>
         <a class="button button-quiet" href="#method">See how it works</a>
@@ -43,7 +43,7 @@
     <section class="scanner-section" id="scanner">
       <div class="section-heading">
         <div><span class="section-index">01</span><h2>Image-origin scanner</h2></div>
-        <p>Select one image. The first analysis downloads an 83 MB model; subsequent scans use the browser cache.</p>
+        <p>Select one image. The first analysis downloads the full primary model; subsequent scans use the browser cache.</p>
       </div>
 
       <div class="scanner-shell">
@@ -110,12 +110,12 @@
       <div class="model-copy">
         <span class="section-index">03</span>
         <h2>Useful evidence,<br>without theatrical certainty.</h2>
-        <p>This public demo uses the MIT-licensed Community Forensics model by Owens Lab. Performance can shift with new generators, editing, screenshots and compression, so results should not be the sole basis for high-impact decisions.</p>
-        <a href="https://huggingface.co/OwensLab/commfor-model-384" target="_blank" rel="noreferrer">Review the source model &#8599;</a>
+        <p>This public demo uses the same Apache-2.0 SigLIP research baseline as the local DoubleDeep server, including multi-view aggregation and an explicit inconclusive range. Performance can shift with new generators, editing, screenshots and compression, so results should not be the sole basis for high-impact decisions.</p>
+        <a href="https://huggingface.co/Ateeqq/ai-vs-human-image-detector" target="_blank" rel="noreferrer">Review the source model &#8599;</a>
       </div>
       <div class="model-stats">
         <div><span>Runtime</span><strong>Browser</strong><p>ONNX Runtime Web with local WebAssembly inference</p></div>
-        <div><span>Input</span><strong>384 x 384</strong><p>Center-cropped RGB image normalized on device</p></div>
+        <div><span>Input</span><strong>224 x 224</strong><p>Whole-image and regional RGB views normalized on device</p></div>
         <div><span>Privacy</span><strong>Local</strong><p>The selected image never leaves the browser</p></div>
         <div><span>Decision use</span><strong>Assistive</strong><p>Review alongside provenance and human judgment</p></div>
       </div>

@@ -1,0 +1,23 @@
+{
+  "model": "model.onnx",
+  "model_version": "siglip-120k-research-baseline-1-browser",
+  "external_data": [
+    {
+      "path": "model-data-1.bin",
+      "size": 93109256
+    },
+    {
+      "path": "model-data-2.bin",
+      "size": 89653248
+    },
+    {
+      "path": "model-data-3.bin",
+      "size": 94371840
+    },
+    {
+      "path": "model-data-4.bin",
+      "size": 66060288
+    }
+  ],
+  "total_size": 343443123
+}
