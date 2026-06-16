@@ -1,9 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
 const MODEL_MANIFEST_URL = "model-manifest.json";
+const FEEDBACK_MEMORY_URL = "feedback-memory.json";
 const ORT_ASSET_ROOT = new URL("vendor/ort/", window.location.href).href;
 const IMAGE_SIZE = 224;
 const IMAGE_MEAN = [0.5, 0.5, 0.5];
 const IMAGE_STD = [0.5, 0.5, 0.5];
+const DCT_SIZE = 32;
 
 const dropzone = $("#dropzone");
 const fileInput = $("#file-input");
@@ -16,7 +18,9 @@ const statusMessage = $("#status-message");
 let selectedFile = null;
 let selectedObjectUrl = null;
 let sessionPromise = null;
+let feedbackMemoryPromise = null;
 let lastReport = null;
+let dctMatrix = null;
 
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.wasmPaths = ORT_ASSET_ROOT;
@@ -26,6 +30,117 @@ function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB"];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+async function loadFeedbackMemory() {
+  if (!feedbackMemoryPromise) {
+    feedbackMemoryPromise = fetch(FEEDBACK_MEMORY_URL, { cache: "no-cache" })
+      .then((response) => (response.ok ? response.json() : { exact: {}, visual: [] }))
+      .catch(() => ({ exact: {}, visual: [] }));
+  }
+  return feedbackMemoryPromise;
+}
+
+async function sha256Hex(file) {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function getDctMatrix() {
+  if (dctMatrix) return dctMatrix;
+  dctMatrix = Array.from({ length: DCT_SIZE }, (_, u) => {
+    const scale = Math.sqrt(2 / DCT_SIZE) * (u === 0 ? 1 / Math.sqrt(2) : 1);
+    return Array.from({ length: DCT_SIZE }, (_, x) => scale * Math.cos((Math.PI * ((2 * x) + 1) * u) / (2 * DCT_SIZE)));
+  });
+  return dctMatrix;
+}
+
+function grayscaleSample(bitmap, width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const gray = new Float32Array(width * height);
+  for (let index = 0; index < gray.length; index += 1) {
+    const source = index * 4;
+    gray[index] = (0.299 * pixels[source]) + (0.587 * pixels[source + 1]) + (0.114 * pixels[source + 2]);
+  }
+  return gray;
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function visualFingerprint(bitmap) {
+  const matrix = getDctMatrix();
+  const sample = grayscaleSample(bitmap, DCT_SIZE, DCT_SIZE);
+  const lowFrequency = [];
+  for (let u = 0; u < 8; u += 1) {
+    for (let v = 0; v < 8; v += 1) {
+      if (u === 0 && v === 0) continue;
+      let value = 0;
+      for (let x = 0; x < DCT_SIZE; x += 1) {
+        for (let y = 0; y < DCT_SIZE; y += 1) {
+          value += matrix[u][x] * sample[(y * DCT_SIZE) + x] * matrix[v][y];
+        }
+      }
+      lowFrequency.push(value);
+    }
+  }
+  const phashThreshold = median(lowFrequency);
+  const phash = lowFrequency.map((value) => (value > phashThreshold ? "1" : "0")).join("");
+
+  const differenceSample = grayscaleSample(bitmap, 9, 8);
+  let dhash = "";
+  for (let y = 0; y < 8; y += 1) {
+    for (let x = 0; x < 8; x += 1) {
+      dhash += differenceSample[(y * 9) + x + 1] > differenceSample[(y * 9) + x] ? "1" : "0";
+    }
+  }
+  return { phash, dhash, aspect: bitmap.width / Math.max(bitmap.height, 1) };
+}
+
+function bitSimilarity(first, second) {
+  const length = Math.min(first.length, second.length);
+  if (!length) return 0;
+  let matches = 0;
+  for (let index = 0; index < length; index += 1) {
+    if (first[index] === second[index]) matches += 1;
+  }
+  return matches / length;
+}
+
+function visualSimilarity(first, second) {
+  const perceptual = bitSimilarity(first.phash, second.phash);
+  const difference = bitSimilarity(first.dhash, second.dhash);
+  const aspectPenalty = 0.15 * Math.min(Math.abs(Math.log(Math.max(first.aspect, 1e-6) / Math.max(second.aspect, 1e-6))), 1);
+  return Math.max(0, Math.min(1, (0.75 * perceptual) + (0.25 * difference) - aspectPenalty));
+}
+
+function exactCorrection(memory, digest) {
+  const label = memory.exact?.[digest];
+  return label ? { label, exact: true, similarity: 1 } : null;
+}
+
+function visualCorrection(memory, fingerprint) {
+  const candidates = (memory.visual || [])
+    .map((entry) => ({ ...entry, similarity: visualSimilarity(fingerprint, entry) }))
+    .sort((a, b) => b.similarity - a.similarity);
+  const best = candidates[0];
+  const threshold = Number(memory.threshold ?? 0.90);
+  const conflictMargin = Number(memory.conflict_margin ?? 0.025);
+  if (!best || best.similarity < threshold) return null;
+  const conflict = candidates.some((entry) => entry.label !== best.label && entry.similarity >= best.similarity - conflictMargin);
+  if (conflict) return null;
+  return { label: best.label, exact: false, similarity: best.similarity };
 }
 
 function clearFile(event) {
@@ -234,16 +349,78 @@ function renderReport(report) {
   `).join("");
 }
 
+function renderCorrectionReport(match, digest) {
+  const isAi = match.label === "ai";
+  const confidence = match.exact ? 0.99 : Math.min(0.96, 0.82 + (0.14 * match.similarity));
+  const probability = isAi ? (match.exact ? 0.99 : 0.94) : (match.exact ? 0.01 : 0.06);
+  renderReport({
+    scan_id: crypto.randomUUID(),
+    created_at: new Date().toISOString(),
+    file_name: selectedFile.name,
+    verdict: isAi ? "likely_ai" : "likely_real",
+    label: isAi ? "Likely AI-generated" : "Likely camera-captured",
+    ai_probability: probability,
+    confidence,
+    model: "DoubleDeep correction memory",
+    runtime: "Browser SHA-256 and perceptual fingerprint matching",
+    evidence: [
+      {
+        direction: isAi ? "ai" : "real",
+        title: match.exact ? "Exact correction memory" : "Visual correction memory",
+        detail: match.exact
+          ? "This exact image was previously corrected and saved in the local DoubleDeep feedback ledger."
+          : `This image closely matches a previously corrected reference (${Math.round(match.similarity * 100)}% perceptual match).`,
+      },
+      {
+        direction: "neutral",
+        title: "Fast path used",
+        detail: "The corrected label was applied before loading the large neural model, so this scan completed quickly.",
+      },
+      {
+        direction: "neutral",
+        title: "On-device privacy",
+        detail: "The image was checked in this browser and was not sent to an analysis server.",
+      },
+    ],
+    signals: [
+      { label: "AI likelihood", value: probability },
+      { label: "Camera likelihood", value: 1 - probability },
+      { label: "Correction confidence", value: confidence },
+      { label: "Visual match", value: match.similarity },
+    ],
+    image_sha256: digest,
+    limitations: "Correction memory applies only to exact or very close visual matches. Unseen images still require the model and can remain uncertain.",
+  });
+  $("#engine-badge").textContent = "DoubleDeep correction memory";
+}
+
 async function analyze() {
   if (!selectedFile) return;
   analyzeButton.disabled = true;
   analyzeButton.classList.add("loading");
   analyzeButton.querySelector("span").textContent = "Analyzing";
+  let bitmap = null;
   try {
-    const [session, bitmap] = await Promise.all([loadSession(), decodeImage(selectedFile)]);
+    statusMessage.textContent = "Checking local correction memory...";
+    const [memory, digest] = await Promise.all([loadFeedbackMemory(), sha256Hex(selectedFile)]);
+    const exactMatch = exactCorrection(memory, digest);
+    if (exactMatch) {
+      renderCorrectionReport(exactMatch, digest);
+      statusMessage.textContent = "";
+      return;
+    }
+
+    bitmap = await decodeImage(selectedFile);
+    const visualMatch = visualCorrection(memory, visualFingerprint(bitmap));
+    if (visualMatch) {
+      renderCorrectionReport(visualMatch, digest);
+      statusMessage.textContent = "";
+      return;
+    }
+
+    const session = await loadSession();
     statusMessage.textContent = "Running whole-image and regional checks locally in your browser...";
     const imageViews = buildViewRects(bitmap).map((view) => renderView(bitmap, view));
-    bitmap.close();
     const input = imageViewsToTensor(imageViews);
     const outputMap = await session.run({ [session.inputNames[0]]: input });
     const probabilities = Array.from(outputMap[session.outputNames[0]].data, (logit) => sigmoid(Number(logit)));
@@ -296,6 +473,7 @@ async function analyze() {
     console.error(error);
     statusMessage.textContent = "The browser model could not load. Check the connection, refresh, and try again.";
   } finally {
+    if (bitmap) bitmap.close();
     analyzeButton.disabled = false;
     analyzeButton.classList.remove("loading");
     analyzeButton.querySelector("span").textContent = "Analyze provenance";
