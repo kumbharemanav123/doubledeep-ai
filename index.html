@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="DoubleDeep AI runs image-origin analysis privately in your browser.">
-  <title>DoubleDeep AI | Browser Image Detector</title>
+  <meta name="description" content="DoubleDeep AI runs image and video-origin analysis privately in your browser.">
+  <title>DoubleDeep AI | Browser Image and Video Detector</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
   <div class="page-glow page-glow-one"></div>
@@ -28,40 +28,62 @@
 
   <main id="top">
     <section class="hero">
-      <div class="eyebrow"><span></span> Private, in-browser image intelligence</div>
+      <div class="eyebrow"><span></span> Private, in-browser media intelligence</div>
       <h1>Look beyond the image.<br><em>Inspect its origin.</em></h1>
-      <p class="hero-copy">DoubleDeep uses local correction memory first, then its primary SigLIP vision detector with whole-image and regional analysis to estimate whether an image is synthetic or camera-captured. Inference runs on your device and the image is never uploaded.</p>
+      <p class="hero-copy">DoubleDeep checks images, short videos and direct video links with local correction memory, a SigLIP ONNX detector and frame-level forensic signals. Files are analyzed on your device; feedback is saved locally for future corrections.</p>
       <div class="hero-actions">
-        <a class="button button-primary" href="#scanner">Analyze an image <span aria-hidden="true">&#8599;</span></a>
+        <a class="button button-primary" href="#scanner">Analyze media <span aria-hidden="true">&#8599;</span></a>
         <a class="button button-quiet" href="#method">See how it works</a>
       </div>
       <div class="trust-row" aria-label="Product capabilities">
-        <span>JPEG</span><span>PNG</span><span>WEBP</span><span>On-device inference</span><span>Downloadable report</span>
+        <span>JPEG</span><span>PNG</span><span>WEBP</span><span>MP4/WebM</span><span>Direct links</span><span>Feedback memory</span>
       </div>
     </section>
 
     <section class="scanner-section" id="scanner">
       <div class="section-heading">
-        <div><span class="section-index">01</span><h2>Image-origin scanner</h2></div>
-        <p>Select one image. Known corrected images return instantly; new images load the optimized primary model and then use the browser cache.</p>
+        <div><span class="section-index">01</span><h2>Media-origin scanner</h2></div>
+        <p>Analyze one image, one video up to 5 minutes, or a direct video URL. Browser security may block some social-media links unless the source allows cross-origin video reads.</p>
       </div>
 
       <div class="scanner-shell">
         <div class="upload-column">
-          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload an image">
+          <div class="mode-tabs" role="tablist" aria-label="Analysis mode">
+            <button class="mode-tab active" type="button" data-mode="image">Image</button>
+            <button class="mode-tab" type="button" data-mode="video">Video</button>
+            <button class="mode-tab" type="button" data-mode="url">Video link</button>
+          </div>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload media">
             <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
             <div id="empty-state" class="empty-state">
               <div class="upload-icon"><span>+</span></div>
-              <h3>Drop an image here</h3>
-              <p>click to browse, drop, or paste</p>
-              <small>JPEG, PNG or WEBP &middot; maximum 15 MB</small>
+              <h3 id="drop-title">Drop an image here</h3>
+              <p id="drop-copy">click to browse, drop, or paste</p>
+              <small id="drop-limit">JPEG, PNG or WEBP &middot; maximum 15 MB</small>
             </div>
             <div id="preview-state" class="preview-state" hidden>
-              <img id="preview-image" alt="Selected image preview">
-              <button id="remove-image" class="remove-button" type="button" aria-label="Remove selected image">&times;</button>
+              <img id="preview-image" alt="Selected image preview" hidden>
+              <video id="preview-video" muted playsinline controls hidden></video>
+              <button id="remove-image" class="remove-button" type="button" aria-label="Remove selected media">&times;</button>
               <div class="preview-meta"><strong id="preview-name"></strong><span id="preview-size"></span></div>
             </div>
           </div>
+
+          <div id="url-panel" class="url-panel" hidden>
+            <label for="video-url">Direct video URL</label>
+            <div>
+              <input id="video-url" type="url" placeholder="https://example.com/video.mp4">
+              <button id="load-url" type="button">Load</button>
+            </div>
+            <small>Works with direct video files or pages that permit browser video access. YouTube, Instagram and many news/social pages block frame extraction from static websites.</small>
+          </div>
+
+          <div class="analysis-options">
+            <label><input id="web-check" type="checkbox" checked><span><strong>Web trace kit</strong> Include reverse-search links, source URL checks and reusable query terms in the report.</span></label>
+            <label><input id="save-local-feedback" type="checkbox" checked><span><strong>Local learning</strong> Store your corrections in this browser so visually similar media can be corrected faster next time.</span></label>
+          </div>
+
           <button id="analyze-button" class="analyze-button" type="button" disabled>
             <span>Analyze provenance</span><b aria-hidden="true">&#8599;</b>
           </button>
@@ -72,7 +94,7 @@
           <div id="result-placeholder" class="result-placeholder">
             <div class="radar"><i></i><i></i><i></i><span></span></div>
             <h3>Analysis will appear here</h3>
-            <p>The model reviews learned generator traces and reports uncertainty instead of forcing a binary claim.</p>
+            <p>The detector reports likelihood, confidence, frame-level evidence and limitations instead of forcing certainty.</p>
           </div>
           <div id="result-content" hidden>
             <div class="result-topline"><span id="engine-badge">Browser model</span><span id="scan-id"></span></div>
@@ -83,11 +105,40 @@
             <div class="confidence-line"><span>Evidence confidence</span><b id="confidence-value">--</b></div>
             <div class="confidence-track"><i id="confidence-bar"></i></div>
             <div class="evidence-list" id="evidence-list"></div>
+            <div id="web-card" class="verification-card" hidden></div>
             <details class="signal-details">
               <summary>View signal profile</summary>
               <div id="signal-list"></div>
             </details>
-            <button id="download-report" class="report-button" type="button">Download JSON report</button>
+            <div id="frame-strip" class="frame-strip" hidden></div>
+            <section id="feedback-card" class="feedback-card" hidden>
+              <div class="feedback-heading">
+                <div><span>Feedback memory</span><h4>Was this answer correct?</h4></div>
+                <span class="feedback-badge">Local training data</span>
+              </div>
+              <div class="feedback-choice">
+                <button type="button" data-feedback="correct">Yes, correct</button>
+                <button type="button" data-feedback="wrong">No, wrong</button>
+              </div>
+              <div id="correction-fields" class="correction-fields" hidden>
+                <p>Select the correct label for this media.</p>
+                <div class="feedback-choice">
+                  <button type="button" data-correction="ai">AI/deepfake</button>
+                  <button type="button" data-correction="real">Camera-captured</button>
+                  <button type="button" data-correction="unknown">Unsure</button>
+                </div>
+              </div>
+              <label class="feedback-notes">Notes
+                <textarea id="feedback-notes" placeholder="Optional source, context or review notes"></textarea>
+              </label>
+              <button id="feedback-submit" class="feedback-submit" type="button" disabled>Save feedback</button>
+              <p id="feedback-status" class="feedback-status"></p>
+              <small>Static GitHub Pages cannot retrain the global ONNX model automatically. Feedback is saved in localStorage and can be exported as reviewed training data.</small>
+            </section>
+            <div class="report-actions">
+              <button id="download-report" class="report-button" type="button">Download JSON report</button>
+              <button id="export-feedback" class="report-button" type="button">Export feedback memory</button>
+            </div>
           </div>
         </aside>
       </div>
@@ -99,10 +150,10 @@
         <p>A compact deployment designed for open access, transparent limitations and private processing.</p>
       </div>
       <div class="method-grid">
-        <article><span>01</span><div class="method-icon pixel-icon"></div><h3>Trained visual model</h3><p>A Vision Transformer evaluates visual patterns learned from camera and generated-image datasets.</p></article>
-        <article><span>02</span><div class="method-icon wave-icon"></div><h3>Local preprocessing</h3><p>Your browser crops, resizes and normalizes the image before inference. No upload API is involved.</p></article>
-        <article><span>03</span><div class="method-icon file-icon"></div><h3>Explicit uncertainty</h3><p>Mid-range scores are reported as inconclusive. A detector estimate is evidence, not proof of authorship.</p></article>
-        <article><span>04</span><div class="method-icon gauge-icon"></div><h3>Portable report</h3><p>Download the score, verdict and model metadata as JSON for review or benchmark documentation.</p></article>
+        <article><span>01</span><div class="method-icon pixel-icon"></div><h3>Trained image model</h3><p>A SigLIP Vision Transformer evaluates camera and generated-image traces from whole images, crops and sampled video frames.</p></article>
+        <article><span>02</span><div class="method-icon wave-icon"></div><h3>Video analyst</h3><p>Short videos are decoded locally, sampled across time and checked for frame disagreement, temporal jumps, freeze loops and unusual motion.</p></article>
+        <article><span>03</span><div class="method-icon file-icon"></div><h3>Correction memory</h3><p>Reviewed exact and perceptual matches return faster, and new user corrections are stored locally for future runs.</p></article>
+        <article><span>04</span><div class="method-icon gauge-icon"></div><h3>Portable report</h3><p>Download scores, frame summaries, web-search leads, limitations and feedback data for review or later retraining.</p></article>
       </div>
     </section>
 
@@ -110,25 +161,25 @@
       <div class="model-copy">
         <span class="section-index">03</span>
         <h2>Useful evidence,<br>without theatrical certainty.</h2>
-        <p>This public demo uses the same Apache-2.0 SigLIP research baseline as the local DoubleDeep server, plus exported correction memory from reviewed local feedback. Performance can shift with new generators, editing, screenshots and compression, so results should not be the sole basis for high-impact decisions.</p>
+        <p>This public demo uses the Apache-2.0 SigLIP image detector `Ateeqq/ai-vs-human-image-detector`, exported correction memory and browser-only temporal video signals. Results can shift with new generators, edits, screenshots, compression and cross-origin video limits, so do not use them as the only basis for high-impact decisions.</p>
         <a href="https://huggingface.co/Ateeqq/ai-vs-human-image-detector" target="_blank" rel="noreferrer">Review the source model &#8599;</a>
       </div>
       <div class="model-stats">
         <div><span>Runtime</span><strong>Browser</strong><p>Correction memory first, then ONNX Runtime Web inference</p></div>
-        <div><span>Input</span><strong>224 x 224</strong><p>Whole-image and regional RGB views normalized on device</p></div>
-        <div><span>Privacy</span><strong>Local</strong><p>The selected image never leaves the browser</p></div>
-        <div><span>Decision use</span><strong>Assistive</strong><p>Review alongside provenance and human judgment</p></div>
+        <div><span>Video input</span><strong>5 min max</strong><p>Frame sampling, motion checks and direct-link analysis where CORS permits</p></div>
+        <div><span>Privacy</span><strong>Local</strong><p>Selected files never leave the browser unless you open external search links</p></div>
+        <div><span>Learning</span><strong>Local</strong><p>User corrections are stored in this browser and exportable for dataset curation</p></div>
       </div>
     </section>
   </main>
 
   <footer>
     <div class="brand"><span class="brand-mark"><i></i><i></i></span><span>DoubleDeep <b>AI</b></span></div>
-    <p>Browser-native image intelligence by Manav Kumbhare.</p>
+    <p>Browser-native media intelligence by Manav Kumbhare.</p>
     <span>Probabilistic analysis &middot; public research demo</span>
   </footer>
 
   <script src="vendor/ort/ort.min.js"></script>
-  <script src="app.js?v=2" defer></script>
+  <script src="app.js?v=3" defer></script>
 </body>
 </html>
