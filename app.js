@@ -13,6 +13,7 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 600 * 1024 * 1024;
 const MAX_VIDEO_SECONDS = 5 * 60;
 const VIDEO_FRAME_LIMIT = 18;
+const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
 
 const dropzone = $("#dropzone");
 const fileInput = $("#file-input");
@@ -298,7 +299,18 @@ function loadDirectUrl() {
   selectedFile = null;
   selectedSourceType = "url";
   analyzeButton.disabled = false;
-  statusMessage.textContent = "Video link loaded. Analysis will work if the host allows browser frame access.";
+  statusMessage.textContent = isServerOnlyVideoUrl(value)
+    ? "YouTube/social link loaded. Use the local DoubleDeep backend for full frame analysis."
+    : "Video link loaded. Analysis will work if the host allows browser frame access.";
+}
+
+function isServerOnlyVideoUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com") || host === "instagram.com" || host.endsWith(".instagram.com") || host === "tiktok.com" || host.endsWith(".tiktok.com");
+  } catch {
+    return false;
+  }
 }
 
 async function loadSession() {
@@ -499,6 +511,76 @@ function renderFrameStrip(frames = []) {
   strip.innerHTML = frames.slice(0, 8).map((frame) => `
     <div><img src="${frame.thumbnail}" alt="Video frame at ${frame.time.toFixed(1)} seconds"><span>${frame.time.toFixed(1)}s &middot; ${Math.round(frame.probability * 100)}%</span></div>
   `).join("");
+}
+
+async function analyzeUrlWithBackend(url) {
+  const endpoints = ["/api/analyze-url"];
+  if (!location.hostname || !["127.0.0.1", "localhost"].includes(location.hostname)) {
+    endpoints.push(`${LOCAL_BACKEND_URL}/api/analyze-url`);
+  }
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || `Backend returned ${response.status}.`);
+      }
+      return response.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Local backend is not available.");
+}
+
+function renderBackendUnavailable(url, cause) {
+  const isSocial = isServerOnlyVideoUrl(url);
+  const report = {
+    scan_id: crypto.randomUUID(),
+    created_at: new Date().toISOString(),
+    media_type: "video",
+    file_name: url,
+    source_url: url,
+    verdict: "needs_backend",
+    label: "Needs local backend",
+    ai_probability: 0.5,
+    confidence: 0.25,
+    engine: "DoubleDeep link bridge",
+    model: "Not run",
+    runtime: "Browser link preflight",
+    evidence: [
+      {
+        direction: "neutral",
+        title: isSocial ? "YouTube/social frame access is blocked in browsers" : "Remote frame access failed",
+        detail: isSocial
+          ? "YouTube Shorts pages do not expose raw video frames to arbitrary GitHub Pages sites. Run the local DoubleDeep backend or upload the downloaded video file."
+          : "This host did not provide a browser-readable direct video stream. The local backend can try yt-dlp extraction.",
+      },
+      {
+        direction: "neutral",
+        title: "How to analyze this link",
+        detail: "Run `python3 server/app.py` from the project folder, open http://127.0.0.1:8787, paste the link again, and the backend will sample frames server-side.",
+      },
+      {
+        direction: "neutral",
+        title: "Original error",
+        detail: cause?.message || "The video could not be loaded by this browser.",
+      },
+    ],
+    signals: [
+      { label: "AI likelihood", value: 0.5 },
+      { label: "Camera likelihood", value: 0.5 },
+      { label: "Decision confidence", value: 0.25 },
+    ],
+    web_trace: buildSearchLinks({ file_name: url, source_url: url, media_type: "video", label: "deepfake video source check" }),
+    limitations: "A static website cannot decode protected platform video frames. Use the local backend for YouTube, Shorts, TikTok, Instagram and similar links.",
+  };
+  renderReport(report);
 }
 
 function resetFeedbackUi() {
@@ -835,9 +917,30 @@ async function analyze() {
         renderCorrectionReport(exactMatch, digest, selectedUrl, "video");
         return;
       }
+      if (isServerOnlyVideoUrl(selectedUrl)) {
+        statusMessage.textContent = "Using the local backend for this platform link...";
+        try {
+          const report = await analyzeUrlWithBackend(selectedUrl);
+          renderReport(report);
+          return;
+        } catch (error) {
+          renderBackendUnavailable(selectedUrl, error);
+          return;
+        }
+      }
       statusMessage.textContent = "Loading remote video. The host must allow cross-origin frame reads...";
-      const video = await createVideo(selectedUrl, true);
-      await analyzeVideoSource(video, selectedUrl, selectedUrl);
+      try {
+        const video = await createVideo(selectedUrl, true);
+        await analyzeVideoSource(video, selectedUrl, selectedUrl);
+      } catch (error) {
+        statusMessage.textContent = "Direct browser analysis failed. Trying the local backend...";
+        try {
+          const report = await analyzeUrlWithBackend(selectedUrl);
+          renderReport(report);
+        } catch {
+          renderBackendUnavailable(selectedUrl, error);
+        }
+      }
     }
     statusMessage.textContent = "";
   } catch (error) {

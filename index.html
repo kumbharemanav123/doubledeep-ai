@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <div class="page-glow page-glow-one"></div>
@@ -30,7 +30,7 @@
     <section class="hero">
       <div class="eyebrow"><span></span> Private, in-browser media intelligence</div>
       <h1>Look beyond the image.<br><em>Inspect its origin.</em></h1>
-      <p class="hero-copy">DoubleDeep checks images, short videos and direct video links with local correction memory, a SigLIP ONNX detector and frame-level forensic signals. Files are analyzed on your device; feedback is saved locally for future corrections.</p>
+      <p class="hero-copy">DoubleDeep checks images, short videos and video links with correction memory, a SigLIP ONNX detector and frame-level forensic signals. Uploaded files are analyzed on your device; YouTube and social links use the optional local backend.</p>
       <div class="hero-actions">
         <a class="button button-primary" href="#scanner">Analyze media <span aria-hidden="true">&#8599;</span></a>
         <a class="button button-quiet" href="#method">See how it works</a>
@@ -43,7 +43,7 @@
     <section class="scanner-section" id="scanner">
       <div class="section-heading">
         <div><span class="section-index">01</span><h2>Media-origin scanner</h2></div>
-        <p>Analyze one image, one video up to 5 minutes, or a direct video URL. Browser security may block some social-media links unless the source allows cross-origin video reads.</p>
+        <p>Analyze one image, one video up to 5 minutes, or a video URL. GitHub Pages can read direct CORS-enabled video files; YouTube Shorts and social pages need the local backend.</p>
       </div>
 
       <div class="scanner-shell">
@@ -76,7 +76,7 @@
               <input id="video-url" type="url" placeholder="https://example.com/video.mp4">
               <button id="load-url" type="button">Load</button>
             </div>
-            <small>Works with direct video files or pages that permit browser video access. YouTube, Instagram and many news/social pages block frame extraction from static websites.</small>
+            <small>Direct MP4/WebM links run in the browser when CORS permits. YouTube, Shorts, TikTok and Instagram require the local backend at http://127.0.0.1:8787.</small>
           </div>
 
           <div class="analysis-options">
@@ -151,7 +151,7 @@
       </div>
       <div class="method-grid">
         <article><span>01</span><div class="method-icon pixel-icon"></div><h3>Trained image model</h3><p>A SigLIP Vision Transformer evaluates camera and generated-image traces from whole images, crops and sampled video frames.</p></article>
-        <article><span>02</span><div class="method-icon wave-icon"></div><h3>Video analyst</h3><p>Short videos are decoded locally, sampled across time and checked for frame disagreement, temporal jumps, freeze loops and unusual motion.</p></article>
+        <article><span>02</span><div class="method-icon wave-icon"></div><h3>Video analyst</h3><p>Short videos are sampled across time and checked for frame disagreement, temporal jumps, freeze loops and unusual motion. The local backend unlocks YouTube links.</p></article>
         <article><span>03</span><div class="method-icon file-icon"></div><h3>Correction memory</h3><p>Reviewed exact and perceptual matches return faster, and new user corrections are stored locally for future runs.</p></article>
         <article><span>04</span><div class="method-icon gauge-icon"></div><h3>Portable report</h3><p>Download scores, frame summaries, web-search leads, limitations and feedback data for review or later retraining.</p></article>
       </div>
@@ -166,7 +166,7 @@
       </div>
       <div class="model-stats">
         <div><span>Runtime</span><strong>Browser</strong><p>Correction memory first, then ONNX Runtime Web inference</p></div>
-        <div><span>Video input</span><strong>5 min max</strong><p>Frame sampling, motion checks and direct-link analysis where CORS permits</p></div>
+        <div><span>Video input</span><strong>5 min max</strong><p>Frame sampling, motion checks and YouTube support through the local backend</p></div>
         <div><span>Privacy</span><strong>Local</strong><p>Selected files never leave the browser unless you open external search links</p></div>
         <div><span>Learning</span><strong>Local</strong><p>User corrections are stored in this browser and exportable for dataset curation</p></div>
       </div>
@@ -180,6 +180,6 @@
   </footer>
 
   <script src="vendor/ort/ort.min.js"></script>
-  <script src="app.js?v=3" defer></script>
+  <script src="app.js?v=4" defer></script>
 </body>
 </html>
