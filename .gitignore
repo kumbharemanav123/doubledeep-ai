@@ -1,1 +1,7 @@
 vendor/package/
+.venv/
+__pycache__/
+*.pyc
+server/tmp/
+training/data/
+training/runs/

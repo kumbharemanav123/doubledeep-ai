@@ -16,6 +16,31 @@ A static, browser-native AI image and video-origin detector. The public site use
 
 ## Run locally
 
+For the full version, including YouTube Shorts and social-video links, use the launcher for your operating system.
+
+Windows:
+
+```text
+run_windows.bat
+```
+
+macOS or Linux:
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8787/
+```
+
+More detailed instructions are in `RUN_ON_ANY_COMPUTER.md`.
+
+## Browser-only mode
+
 For browser-only image, uploaded-video and direct MP4/WebM analysis, serve this directory with any static HTTP server:
 
 ```bash
@@ -55,8 +80,8 @@ Paste the YouTube Shorts URL in the Video link tab. The backend resolves the pag
 Commit and push the static files to the repository branch used by GitHub Pages:
 
 ```bash
-git add index.html app.js styles.css README.md
-git commit -m "Add video deepfake analyst"
+git add .
+git commit -m "Update DoubleDeep AI"
 git push origin main
 ```
 
